@@ -110,7 +110,7 @@ def count_degree(data: np.ndarray):  # data: (sample, node, node)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, default="BP")
+    parser.add_argument('--dataset_name', type=str, default="FC_Y")
     parser.add_argument('--view', type=int, default=1)
     parser.add_argument('--edge_threshold', type=float, default=0.077,
                         help='Set |w| < threshold to 0 (0 disables).')
