@@ -35,10 +35,10 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
             loss_all += loss.item()
         epoch_loss = loss_all / len(train_loader.dataset)
 
-        train_micro, train_auc, train_macro = evaluate(model, device, train_loader)
-        logging.info(f'(Train) | Epoch={i:03d}, loss={epoch_loss:.4f}, '
-                     f'train_micro={(train_micro * 100):.2f}, train_macro={(train_macro * 100):.2f}, '
-                     f'train_auc={(train_auc * 100):.2f}')
+        # train_micro, train_auc, train_macro = evaluate(model, device, train_loader)
+        logging.info(f'(Train) | Epoch={i:03d}, loss={epoch_loss:.4f}') #, '
+                     # f'train_micro={(train_micro * 100):.2f}, train_macro={(train_macro * 100):.2f}, '
+                     # f'train_auc={(train_auc * 100):.2f}')
 
         if (i + 1) % args.test_interval == 0:
             test_micro, test_auc, test_macro = evaluate(model, device, test_loader)
