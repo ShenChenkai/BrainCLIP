@@ -39,6 +39,14 @@ def main(args):
     args.model_name = model_name
     # seed_everything(args.seed) # use args.seed for each run
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    if torch.cuda.is_available():
+        print(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
+        loader_args = dict(num_workers=4, pin_memory=True, persistent_workers=True)
+    else:
+        print("⚠️ Warning: CUDA is not available. Training will be slow on CPU.")
+        loader_args = dict(num_workers=4)
+
     self_dir = os.path.dirname(os.path.realpath(__file__))
 
     if args.dataset_name == 'ABCD':  # ABCD dataset puts files in a separate directory
@@ -73,14 +81,14 @@ def main(args):
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             train_set, test_set = dataset[train_index], dataset[test_index]
 
-            train_loader = DataLoader(train_set, batch_size=args.train_batch_size, shuffle=False)
-            test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=False)
+            train_loader = DataLoader(train_set, batch_size=args.train_batch_size, shuffle=True, **loader_args)
+            test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=False, **loader_args)
 
             # train
-            test_micro, test_auc, test_macro = train_and_evaluate(model, train_loader, test_loader,
+            test_micro, test_auc, test_macro, _ = train_and_evaluate(model, train_loader, test_loader,
                                                                   optimizer, device, args)
 
-            test_micro, test_auc, test_macro = evaluate(model, device, test_loader)
+            test_micro, test_auc, test_macro, _ = evaluate(model, device, test_loader)
             logging.info(f'(Initial Performance Last Epoch) | test_micro={(test_micro * 100):.2f}, '
                          f'test_macro={(test_macro * 100):.2f}, test_auc={(test_auc * 100):.2f}')
 
@@ -136,16 +144,16 @@ if __name__ == "__main__":
     parser.add_argument('--gat_hidden_dim', type=int, default=8)
     parser.add_argument('--edge_emb_dim', type=int, default=256)
     parser.add_argument('--bucket_sz', type=float, default=0.05)
-    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--lr', type=float, default=2e-5)
     parser.add_argument('--weight_decay', type=float, default=1e-4)
     parser.add_argument('--dropout', type=float, default=0.5)
 
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--k_fold_splits', type=int, default=5)
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--test_interval', type=int, default=5)
-    parser.add_argument('--train_batch_size', type=int, default=16)
-    parser.add_argument('--test_batch_size', type=int, default=16)
+    parser.add_argument('--test_interval', type=int, default=1)
+    parser.add_argument('--train_batch_size', type=int, default=8)
+    parser.add_argument('--test_batch_size', type=int, default=8)
 
     parser.add_argument('--seed', type=int, default=112078)
     parser.add_argument('--diff', type=float, default=0.2)
