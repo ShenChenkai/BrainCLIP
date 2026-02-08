@@ -66,6 +66,8 @@ def main(args):
         seed_everything(random.randint(1, 1000000))  # use random seed for each run
         skf = StratifiedKFold(n_splits=args.k_fold_splits, shuffle=True)
         for train_index, test_index in skf.split(dataset, y):
+            train_index = np.asarray(train_index, dtype=np.int64)
+            test_index = np.asarray(test_index, dtype=np.int64)
             model = build_model(args, device, model_name, num_features, nodes_num)
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             train_set, test_set = dataset[train_index], dataset[test_index]
@@ -107,9 +109,7 @@ def count_degree(data: np.ndarray):  # data: (sample, node, node)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str,
-                        choices=['PPMI', 'HIV', 'BP', 'ABCD', 'PNC', 'ABIDE'],
-                        default="BP")
+    parser.add_argument('--dataset_name', type=str, default="BP")
     parser.add_argument('--view', type=int, default=1)
     parser.add_argument('--node_features', type=str,
                         choices=['identity', 'degree', 'degree_bin', 'LDP', 'node2vec', 'adj', 'diff_matrix',

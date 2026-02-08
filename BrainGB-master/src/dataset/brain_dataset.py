@@ -28,12 +28,15 @@ def dense_to_ind_val(adj):
 class BrainDataset(InMemoryDataset):
     def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0):
         self.view: int = view
-        self.name = name.upper()
+        self.original_name = str(name)
+        self.name_clean = self.original_name[:-4] if self.original_name.lower().endswith('.npy') else self.original_name
+        self.name = self.name_clean.upper()
         self.filename_postfix = str(pre_transform) if pre_transform is not None else None
-        assert self.name in ['PPMI', 'HIV', 'BP', 'ABCD', 'PNC', 'ABIDE']
+        self._builtin_names = ['PPMI', 'HIV', 'BP', 'ABCD', 'PNC', 'ABIDE']
+        self.is_builtin = self.name in self._builtin_names
         super(BrainDataset, self).__init__(root, transform, pre_transform)
         self.data, self.slices, self.num_nodes = torch.load(self.processed_paths[0])
-        logging.info('Loaded dataset: {}'.format(self.name))
+        logging.info('Loaded dataset: {}'.format(self.name_clean))
 
     @property
     def raw_dir(self):
@@ -45,17 +48,19 @@ class BrainDataset(InMemoryDataset):
 
     @property
     def raw_file_names(self):
+        if not self.is_builtin:
+            return f'{self.name_clean}.npy'
         return f'{self.name}.mat'
 
     @property
     def processed_file_names(self):
-        name = f'{self.name}_{self.view}'
+        name = f'{self.name_clean}_{self.view}'
         if self.filename_postfix is not None:
             name += f'_{self.filename_postfix}'
         return f'{name}.pt'
 
     def _download(self):
-        if files_exist(self.raw_paths) or self.name in ['ABCD', 'PNC', 'ABIDE']:  # pragma: no cover
+        if files_exist(self.raw_paths) or self.name in ['ABCD', 'PNC', 'ABIDE'] or (not self.is_builtin):  # pragma: no cover
             return
 
         makedirs(self.raw_dir)
@@ -65,7 +70,27 @@ class BrainDataset(InMemoryDataset):
         raise NotImplementedError
 
     def process(self):
-        if self.name in ['ABCD', 'PNC', 'ABIDE']:
+        if not self.is_builtin:
+            path = osp.join(self.raw_dir, self.raw_file_names)
+            raw = np.load(path, allow_pickle=True)
+            if isinstance(raw, np.ndarray) and raw.shape == ():
+                raw = raw.item()
+            if not isinstance(raw, dict):
+                raise ValueError(
+                    f'自定义数据集需要 .npy 保存为 dict，例如 {{"corr": corr, "label": label}}，但加载到的类型是 {type(raw)}')
+
+            if 'corr' not in raw or 'label' not in raw:
+                raise KeyError('自定义数据集 dict 必须包含键 "corr" 和 "label"')
+
+            adj = np.asarray(raw['corr'])
+            y = np.asarray(raw['label']).reshape(-1)
+
+            y = torch.LongTensor(y)
+            adj = torch.Tensor(adj)
+
+            num_graphs = adj.shape[0]
+            num_nodes = adj.shape[1]
+        elif self.name in ['ABCD', 'PNC', 'ABIDE']:
             if self.name == 'ABCD':
                 adj, y = load_data_abcd(self.raw_dir)
             elif self.name == 'PNC':
@@ -125,4 +150,4 @@ class BrainDataset(InMemoryDataset):
         print('Done!', file=sys.stderr)
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}{self.name}()'
+        return f'{self.__class__.__name__}{self.name_clean}()'
