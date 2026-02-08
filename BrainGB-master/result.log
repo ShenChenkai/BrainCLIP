@@ -1,3 +1,6 @@
 ['D:\\BrainCLIP\\BrainGB-master\\examples\\example_main.py', '--dataset_name', 'FC_Y', '--pooling', 'concat', '--gcn_mp_type', 'edge_node_concate', '--hidden_dim', '256']
 (K Fold Final Result)| avg_acc=66.67 +-  5.24, avg_auc=76.78 +- 6.19, avg_macro=65.64 +- 5.56
 
+['D:\\BrainCLIP\\BrainGB-master\\examples\\example_main.py', '--dataset_name', 'FC_Y']
+(K Fold Final Result)| avg_acc=58.52 +-  10.84, avg_auc=67.00 +- 11.52, avg_macro=57.36 +- 10.47
+

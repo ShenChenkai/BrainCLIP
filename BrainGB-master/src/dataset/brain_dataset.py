@@ -26,8 +26,9 @@ def dense_to_ind_val(adj):
 
 
 class BrainDataset(InMemoryDataset):
-    def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0):
+    def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0, edge_threshold: float = 0.0):
         self.view: int = view
+        self.edge_threshold: float = float(edge_threshold or 0.0)
         self.original_name = str(name)
         self.name_clean = self.original_name[:-4] if self.original_name.lower().endswith('.npy') else self.original_name
         self.name = self.name_clean.upper()
@@ -57,6 +58,10 @@ class BrainDataset(InMemoryDataset):
         name = f'{self.name_clean}_{self.view}'
         if self.filename_postfix is not None:
             name += f'_{self.filename_postfix}'
+        if self.edge_threshold > 0:
+            thr = f'{self.edge_threshold:g}'
+            thr = thr.replace('-', 'm').replace('+', '').replace('.', 'p')
+            name += f'_thr{thr}'
         return f'{name}.pt'
 
     def _download(self):
@@ -124,7 +129,11 @@ class BrainDataset(InMemoryDataset):
 
         data_list = []
         for i in range(num_graphs):
-            edge_index, edge_attr = dense_to_ind_val(adj[i])
+            adj_i = adj[i]
+            if self.edge_threshold > 0:
+                adj_i = adj_i.clone()
+                adj_i[torch.abs(adj_i) < self.edge_threshold] = 0
+            edge_index, edge_attr = dense_to_ind_val(adj_i)
             data = Data(num_nodes=num_nodes, y=y[i], edge_index=edge_index, edge_attr=edge_attr)
             data_list.append(data)
 

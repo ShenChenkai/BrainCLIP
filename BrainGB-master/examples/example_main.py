@@ -20,12 +20,12 @@ from .train_and_evaluate import train_and_evaluate, evaluate
 
 
 def seed_everything(seed):
-    print(f"seed for seed_everything(): {seed}")
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)  # set random seed for numpy
-    torch.manual_seed(seed)  # set random seed for CPU
-    torch.cuda.manual_seed_all(seed)  # set random seed for all GPUs
+        print(f"seed for seed_everything(): {seed}")
+        random.seed(seed)
+        os.environ['PYTHONHASHSEED'] = str(seed)
+        np.random.seed(seed)  # set random seed for numpy
+        torch.manual_seed(seed)  # set random seed for CPU
+        torch.cuda.manual_seed_all(seed)  # set random seed for all GPUs
 
 
 def main(args):
@@ -51,7 +51,8 @@ def main(args):
         root_dir = os.path.join(self_dir, 'datasets/')
     dataset = BrainDataset(root=root_dir,
                            name=args.dataset_name,
-                           pre_transform=get_transform(args.node_features))
+                           pre_transform=get_transform(args.node_features),
+                           edge_threshold=args.edge_threshold)
     y = get_y(dataset)
     num_features = dataset[0].x.shape[1]
     nodes_num = dataset.num_nodes
@@ -111,6 +112,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, default="BP")
     parser.add_argument('--view', type=int, default=1)
+    parser.add_argument('--edge_threshold', type=float, default=0.077,
+                        help='Set |w| < threshold to 0 (0 disables).')
     parser.add_argument('--node_features', type=str,
                         choices=['identity', 'degree', 'degree_bin', 'LDP', 'node2vec', 'adj', 'diff_matrix',
                                  'eigenvector', 'eigen_norm'],
