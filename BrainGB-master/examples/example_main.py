@@ -60,7 +60,7 @@ def main(args):
     dataset = BrainDataset(root=root_dir,
                            name=args.dataset_name,
                            pre_transform=get_transform(args.node_features),
-                           edge_threshold=args.edge_threshold)
+                           edge_sparsity=args.sparsity)
     y = get_y(dataset)
     num_features = dataset[0].x.shape[1]
     nodes_num = dataset.num_nodes
@@ -72,7 +72,7 @@ def main(args):
 
     accs, aucs, macros, exp_accs, exp_aucs, exp_macros = [], [], [], [], [], []
     for _ in range(args.repeat):
-        seed_everything(random.randint(1, 1000000))  # use random seed for each run
+        seed_everything(42)  # use random seed for each run  random.randint(1, 1000000)
         skf = StratifiedKFold(n_splits=args.k_fold_splits, shuffle=True)
         for train_index, test_index in skf.split(dataset, y):
             train_index = np.asarray(train_index, dtype=np.int64)
@@ -120,8 +120,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, default="FC_Y")
     parser.add_argument('--view', type=int, default=1)
-    parser.add_argument('--edge_threshold', type=float, default=0.077,
-                        help='Set |w| < threshold to 0 (0 disables).')
+    parser.add_argument('--sparsity', type=float, default=0.1,
+                        help='Keep top proportion of edges (e.g. 0.1 for top 10%).')
     parser.add_argument('--node_features', type=str,
                         choices=['identity', 'degree', 'degree_bin', 'LDP', 'node2vec', 'adj', 'diff_matrix',
                                  'eigenvector', 'eigen_norm'],
@@ -140,11 +140,11 @@ if __name__ == "__main__":
     parser.add_argument('--n_GNN_layers', type=int, default=2)
     parser.add_argument('--n_MLP_layers', type=int, default=1)
     parser.add_argument('--num_heads', type=int, default=2)
-    parser.add_argument('--hidden_dim', type=int, default=360)
+    parser.add_argument('--hidden_dim', type=int, default=32)
     parser.add_argument('--gat_hidden_dim', type=int, default=8)
     parser.add_argument('--edge_emb_dim', type=int, default=256)
     parser.add_argument('--bucket_sz', type=float, default=0.05)
-    parser.add_argument('--lr', type=float, default=2e-5)
+    parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-4)
     parser.add_argument('--dropout', type=float, default=0.5)
 
@@ -152,10 +152,10 @@ if __name__ == "__main__":
     parser.add_argument('--k_fold_splits', type=int, default=5)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--test_interval', type=int, default=1)
-    parser.add_argument('--train_batch_size', type=int, default=8)
-    parser.add_argument('--test_batch_size', type=int, default=8)
+    parser.add_argument('--train_batch_size', type=int, default=16)
+    parser.add_argument('--test_batch_size', type=int, default=16)
 
-    parser.add_argument('--seed', type=int, default=112078)
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--diff', type=float, default=0.2)
     parser.add_argument('--mixup', type=int, default=1) #[0, 1]
 

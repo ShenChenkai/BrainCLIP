@@ -27,15 +27,8 @@ class MPGATConv(GATConv):
  
      
 
-    def message(self, x_i, x_j, alpha_j, alpha_i, edge_attr, index, ptr, size_i):
-        alpha = alpha_j if alpha_i is None else alpha_j + alpha_i
-        alpha = F.leaky_relu(alpha, self.negative_slope)
-        alpha = softmax(alpha, index, ptr, size_i)
-        self._alpha = alpha
-        alpha = F.dropout(alpha, p=self.dropout, training=self.training)
-
-        attention_score = alpha.unsqueeze(-1)  
-        edge_weights = torch.abs(edge_attr.view(-1, 1).unsqueeze(-1))
+    def message(self, x_j, alpha, x_i=None, edge_attr=None):
+        attention_score = alpha.unsqueeze(-1)
 
         if self.gat_mp_type == "attention_weighted":
             # (1) att: s^(l+1) = s^l * alpha
@@ -43,19 +36,31 @@ class MPGATConv(GATConv):
             return msg
         elif self.gat_mp_type == "attention_edge_weighted":
             # (2) e-att: s^(l+1) = s^l * alpha * e
+            if edge_attr is None:
+                raise RuntimeError("gat_mp_type='attention_edge_weighted' requires edge_attr in message passing, but current GATConv API does not provide it here.")
+            edge_weights = torch.abs(edge_attr.view(-1, 1).unsqueeze(-1))
             msg = x_j * attention_score * edge_weights
             return msg
         elif self.gat_mp_type == "sum_attention_edge":
             # (3) m-att-1: s^(l+1) = s^l * (alpha + e), this one may not make sense cause it doesn't used attention score to control all
+            if edge_attr is None:
+                raise RuntimeError("gat_mp_type='sum_attention_edge' requires edge_attr in message passing, but current GATConv API does not provide it here.")
+            edge_weights = torch.abs(edge_attr.view(-1, 1).unsqueeze(-1))
             msg = x_j * (attention_score + edge_weights)
             return msg
         elif self.gat_mp_type == "edge_node_concate":
             # (4) m-att-2: s^(l+1) = linear(concat(s^l, e) * alpha)
+            if x_i is None:
+                raise RuntimeError("gat_mp_type='edge_node_concate' requires x_i but it was not provided.")
+            if edge_attr is None:
+                raise RuntimeError("gat_mp_type='edge_node_concate' requires edge_attr in message passing, but current GATConv API does not provide it here.")
             msg = torch.cat([x_i, x_j * attention_score, edge_attr.view(-1, 1).unsqueeze(-1).expand(-1, self.heads, -1)], dim=-1)
             msg = self.edge_lin(msg)
             return msg
         elif self.gat_mp_type == "node_concate":
             # (4) m-att-2: s^(l+1) = linear(concat(s^l, e) * alpha)
+            if x_i is None:
+                raise RuntimeError("gat_mp_type='node_concate' requires x_i but it was not provided.")
             msg = torch.cat([x_i, x_j * attention_score], dim=-1)
             msg = self.edge_lin(msg)
             return msg

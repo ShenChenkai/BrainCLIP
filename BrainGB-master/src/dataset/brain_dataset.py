@@ -19,16 +19,16 @@ def dense_to_ind_val(adj):
     assert adj.dim() >= 2 and adj.dim() <= 3
     assert adj.size(-1) == adj.size(-2)
 
-    index = (torch.isnan(adj)==0).nonzero(as_tuple=True)
+    index = (adj != 0).nonzero(as_tuple=True)
     edge_attr = adj[index]
 
     return torch.stack(index, dim=0), edge_attr
 
 
 class BrainDataset(InMemoryDataset):
-    def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0, edge_threshold: float = 0.0):
+    def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0, edge_sparsity: float = 0.0):
         self.view: int = view
-        self.edge_threshold: float = float(edge_threshold or 0.0)
+        self.edge_sparsity: float = float(edge_sparsity or 0.0)
         self.original_name = str(name)
         self.name_clean = self.original_name[:-4] if self.original_name.lower().endswith('.npy') else self.original_name
         self.name = self.name_clean.upper()
@@ -58,10 +58,10 @@ class BrainDataset(InMemoryDataset):
         name = f'{self.name_clean}_{self.view}'
         if self.filename_postfix is not None:
             name += f'_{self.filename_postfix}'
-        if self.edge_threshold > 0:
-            thr = f'{self.edge_threshold:g}'
-            thr = thr.replace('-', 'm').replace('+', '').replace('.', 'p')
-            name += f'_thr{thr}'
+        if self.edge_sparsity > 0:
+            spr = f'{self.edge_sparsity:g}'
+            spr = spr.replace('.', 'p')
+            name += f'_spr{spr}'
         return f'{name}.pt'
 
     def _download(self):
@@ -129,12 +129,41 @@ class BrainDataset(InMemoryDataset):
 
         data_list = []
         for i in range(num_graphs):
-            adj_i = adj[i]
-            if self.edge_threshold > 0:
-                adj_i = adj_i.clone()
-                adj_i[torch.abs(adj_i) < self.edge_threshold] = 0
-            edge_index, edge_attr = dense_to_ind_val(adj_i)
+            # 1. Get current matrix
+            matrix = adj[i].clone()
+            
+            if self.edge_sparsity > 0:
+                n = matrix.size(0)
+                matrix.fill_diagonal_(0)
+                matrix = (matrix + matrix.t()) / 2
+
+                rows, cols = torch.triu_indices(n, n, offset=1, device=matrix.device)
+                upper_vals = matrix[rows, cols].abs()
+                k = int(round(self.edge_sparsity * upper_vals.numel()))
+
+                if k <= 0 or upper_vals.numel() == 0:
+                    mask = torch.zeros_like(matrix, dtype=torch.bool)
+                else:
+                    if k >= upper_vals.numel():
+                        threshold = upper_vals.min()
+                    else:
+                        threshold = torch.topk(upper_vals, k).values[-1]
+
+                    upper_mask = torch.zeros_like(matrix, dtype=torch.bool)
+                    upper_mask[rows, cols] = matrix[rows, cols].abs() >= threshold
+                    mask = upper_mask | upper_mask.t()
+                    mask.fill_diagonal_(0)
+
+                edge_index = mask.nonzero(as_tuple=False).t()
+                edge_attr = matrix[edge_index[0], edge_index[1]]
+            else:
+                 # Standard dense to sparse conversion for full graph
+                 edge_index, edge_attr = dense_to_ind_val(matrix)
+
             data = Data(num_nodes=num_nodes, y=y[i], edge_index=edge_index, edge_attr=edge_attr)
+            # 检查一下到底有多少条边！
+            if i == 0:
+                print(f"🛑 DEBUG CHECK: Graph 0 edges: {edge_index.shape[1]}")
             data_list.append(data)
 
         if self.pre_filter is not None:

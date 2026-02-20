@@ -18,7 +18,7 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
     epoch_num = args.epochs
 
     # Add scheduler
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
     for i in range(epoch_num):
         loss_all = 0
@@ -38,7 +38,7 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
             loss.backward()
             optimizer.step()
 
-            loss_all += loss.item()
+            loss_all += loss.item() * data.num_graphs
         epoch_loss = loss_all / len(train_loader.dataset)
         epoch_losses.append(epoch_loss)
 
@@ -61,6 +61,8 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
             logging.info(text)
 
         if args.enable_nni:
+            # Evaluate on training set to get train_auc for NNI reporting
+            train_micro, train_auc, train_macro, train_loss = evaluate(model, device, train_loader)
             nni.report_intermediate_result(train_auc)
 
     try:
