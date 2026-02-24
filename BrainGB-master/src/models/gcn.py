@@ -148,5 +148,21 @@ class GCN(torch.nn.Module):
         out = self.fcn(z)
         return out
 
+    def forward_features(self, x, edge_index, edge_attr, batch):
+        z = x
+        edge_attr = torch.abs(edge_attr)
+
+        for i, conv in enumerate(self.convs):
+            z = conv(z, edge_index, edge_attr)
+
+        if self.pooling == "concat":
+            z = z.reshape((z.shape[0] // self.num_nodes, -1))
+        elif self.pooling == 'sum':
+            z = global_add_pool(z, batch)
+        elif self.pooling == 'mean':
+            z = global_mean_pool(z, batch)
+
+        return z
+
         
 

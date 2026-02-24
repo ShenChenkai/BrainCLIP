@@ -79,3 +79,12 @@
 ['D:\\BrainCLIP\\BrainGB-master\\examples\\example_main.py', '--dataset_name', 'FC_Y', '--view', '1', '--sparsity', '0.1', '--node_features', 'adj', '--pooling', 'concat', '--model_name', 'gcn', '--gcn_mp_type', 'weighted_sum', '--gat_mp_type', 'attention_weighted', '--n_GNN_layers', '2', '--n_MLP_layers', '1', '--num_heads', '2', '--hidden_dim', '32', '--gat_hidden_dim', '8', '--edge_emb_dim', '256', '--bucket_sz', '0.05', '--lr', '0.001', '--weight_decay', '0.0001', '--dropout', '0.5', '--repeat', '1', '--k_fold_splits', '5', '--epochs', '100', '--test_interval', '1', '--train_batch_size', '16', '--test_batch_size', '16', '--seed', '42', '--diff', '0.2', '--mixup', '1']
 (K Fold Final Result)| avg_acc=56.30 +-  9.77, avg_auc=58.89 +- 10.98, avg_macro=55.62 +- 9.68
 
+['D:\\BrainCLIP\\BrainGB-master\\examples\\example_main.py', '--epochs', '100', '--train_batch_size', '16', '--test_batch_size', '16', '--lr', '1e-3', '--k_fold_splits', '5', '--repeat', '1']
+(K Fold Final Result)| avg_acc=58.52 +-  10.84, avg_auc=65.11 +- 7.05, avg_macro=57.81 +- 10.72
+
+['D:\\BrainCLIP\\BrainGB-master\\examples\\example_main.py', '--dataset_name', 'FC_Y', '--pooling', 'concat', '--gcn_mp_type', 'edge_node_concate', '--hidden_dim', '256', '--epochs', '100', '--train_batch_size', '16', '--test_batch_size', '16', '--lr', '1e-3', '--weight_decay', '1e-4', '--k_fold_splits', '5', '--repeat', '1']
+(K Fold Final Result)| avg_acc=60.00 +-  9.19, avg_auc=65.00 +- 9.76, avg_macro=52.63 +- 16.01
+
+['D:\\BrainCLIP\\BrainGB-master\\examples\\example_main.py', '--dataset_name', 'FC_Y', '--pooling', 'concat', '--gcn_mp_type', 'edge_node_concate', '--hidden_dim', '256', '--epochs', '100', '--train_batch_size', '16', '--test_batch_size', '16', '--lr', '1e-3', '--weight_decay', '1e-4', '--k_fold_splits', '5', '--repeat', '1']
+(K Fold Final Result)| avg_acc=65.93 +-  2.77, avg_auc=71.78 +- 3.19, avg_macro=65.54 +- 2.97
+

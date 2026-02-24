@@ -84,3 +84,16 @@ def jsd_loss(z1, z2, discriminator, pos_mask, neg_mask=None):
     E_neg /= num_neg
 
     return E_neg - E_pos
+
+
+def info_nce_loss(v_graph: torch.Tensor, v_text: torch.Tensor, temperature: float = 0.07):
+    v_graph = F.normalize(v_graph, dim=-1)
+    v_text = F.normalize(v_text, dim=-1)
+
+    logits = (v_graph @ v_text.t()) / temperature
+    targets = torch.arange(logits.size(0), device=logits.device)
+
+    loss_g2t = F.cross_entropy(logits, targets)
+    loss_t2g = F.cross_entropy(logits.t(), targets)
+
+    return (loss_g2t + loss_t2g) / 2.0

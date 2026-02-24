@@ -42,10 +42,10 @@ def main(args):
 
     if torch.cuda.is_available():
         print(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
-        loader_args = dict(num_workers=4, pin_memory=True, persistent_workers=True)
+        loader_args = dict(num_workers=0, pin_memory=True)
     else:
         print("⚠️ Warning: CUDA is not available. Training will be slow on CPU.")
-        loader_args = dict(num_workers=4)
+        loader_args = dict(num_workers=0)
 
     self_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -77,7 +77,8 @@ def main(args):
         for train_index, test_index in skf.split(dataset, y):
             train_index = np.asarray(train_index, dtype=np.int64)
             test_index = np.asarray(test_index, dtype=np.int64)
-            model = build_model(args, device, model_name, num_features, nodes_num)
+            model = build_model(args, device, model_name, num_features, nodes_num,
+                               load_pretrained=True)
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             train_set, test_set = dataset[train_index], dataset[test_index]
 
@@ -120,7 +121,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, default="FC_Y")
     parser.add_argument('--view', type=int, default=1)
-    parser.add_argument('--sparsity', type=float, default=0.1,
+    parser.add_argument('--sparsity', type=float, default=1.0,
                         help='Keep top proportion of edges (e.g. 0.1 for top 10%).')
     parser.add_argument('--node_features', type=str,
                         choices=['identity', 'degree', 'degree_bin', 'LDP', 'node2vec', 'adj', 'diff_matrix',
@@ -140,11 +141,11 @@ if __name__ == "__main__":
     parser.add_argument('--n_GNN_layers', type=int, default=2)
     parser.add_argument('--n_MLP_layers', type=int, default=1)
     parser.add_argument('--num_heads', type=int, default=2)
-    parser.add_argument('--hidden_dim', type=int, default=32)
+    parser.add_argument('--hidden_dim', type=int, default=360)
     parser.add_argument('--gat_hidden_dim', type=int, default=8)
     parser.add_argument('--edge_emb_dim', type=int, default=256)
     parser.add_argument('--bucket_sz', type=float, default=0.05)
-    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-4)
     parser.add_argument('--dropout', type=float, default=0.5)
 
@@ -155,7 +156,7 @@ if __name__ == "__main__":
     parser.add_argument('--train_batch_size', type=int, default=16)
     parser.add_argument('--test_batch_size', type=int, default=16)
 
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--seed', type=int, default=112078)
     parser.add_argument('--diff', type=float, default=0.2)
     parser.add_argument('--mixup', type=int, default=1) #[0, 1]
 

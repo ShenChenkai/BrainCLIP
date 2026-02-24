@@ -127,6 +127,16 @@ class BrainDataset(InMemoryDataset):
             y = torch.Tensor(m['label']).long().flatten()
             y[y == -1] = 0
 
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained('prajjwal1/bert-tiny')
+
+        prompt_path = osp.join(self.raw_dir, 'Subject_prompt_SZ.txt')
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            prompt_lines = [line.strip() for line in f.readlines()]
+        assert len(prompt_lines) >= num_graphs, (
+            f'Subject_prompt_SZ.txt has {len(prompt_lines)} lines but dataset has {num_graphs} graphs'
+        )
+
         data_list = []
         for i in range(num_graphs):
             # 1. Get current matrix
@@ -160,7 +170,21 @@ class BrainDataset(InMemoryDataset):
                  # Standard dense to sparse conversion for full graph
                  edge_index, edge_attr = dense_to_ind_val(matrix)
 
-            data = Data(num_nodes=num_nodes, y=y[i], edge_index=edge_index, edge_attr=edge_attr)
+            tokenized = tokenizer(
+                prompt_lines[i],
+                padding='max_length',
+                truncation=True,
+                max_length=32,
+                return_tensors='pt',
+            )
+            data = BrainData(
+                num_nodes=num_nodes,
+                y=y[i],
+                edge_index=edge_index,
+                edge_attr=edge_attr,
+                input_ids=tokenized['input_ids'],       # shape [1, 32] → PyG cat → [B, 32]
+                attention_mask=tokenized['attention_mask'],  # shape [1, 32]
+            )
             # 检查一下到底有多少条边！
             if i == 0:
                 print(f"🛑 DEBUG CHECK: Graph 0 edges: {edge_index.shape[1]}")
