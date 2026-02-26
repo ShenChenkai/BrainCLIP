@@ -9,6 +9,78 @@ import logging
 from src.utils import mixup, mixup_criterion
 
 
+class WarmupCosineLRScheduler:
+    def __init__(self, optimizer, total_epochs, warmup_epochs=10, min_lr_ratio=0.01, warmup_start_factor=0.1):
+        self.optimizer = optimizer
+        self.total_epochs = max(1, int(total_epochs))
+        self.warmup_epochs = int(max(0, min(warmup_epochs, self.total_epochs - 1)))
+        self.min_lr_ratio = float(max(0.0, min(1.0, min_lr_ratio)))
+        self.warmup_start_factor = float(max(1e-8, min(1.0, warmup_start_factor)))
+        self.base_lrs = [group['lr'] for group in optimizer.param_groups]
+        self.current_epoch = 0
+
+        if self.warmup_epochs > 0:
+            for param_group, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+                param_group['lr'] = base_lr * self.warmup_start_factor
+
+    def _get_factor(self, epoch_idx):
+        if self.warmup_epochs > 0 and epoch_idx <= self.warmup_epochs:
+            if self.warmup_epochs == 1:
+                return 1.0
+            alpha = (epoch_idx - 1) / (self.warmup_epochs - 1)
+            return self.warmup_start_factor + alpha * (1.0 - self.warmup_start_factor)
+
+        decay_epochs = self.total_epochs - self.warmup_epochs
+        if decay_epochs <= 0:
+            return 1.0
+
+        progress = (epoch_idx - self.warmup_epochs) / decay_epochs
+        progress = float(max(0.0, min(1.0, progress)))
+        cosine = 0.5 * (1.0 + np.cos(np.pi * progress))
+        return self.min_lr_ratio + (1.0 - self.min_lr_ratio) * cosine
+
+    def step(self):
+        self.current_epoch += 1
+        factor = self._get_factor(self.current_epoch)
+        for param_group, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+            param_group['lr'] = base_lr * factor
+
+
+def build_lr_scheduler(optimizer, args):
+    scheduler_name = str(getattr(args, 'lr_scheduler', 'warmup_cosine')).lower()
+
+    if scheduler_name == 'none':
+        return None, scheduler_name
+
+    if scheduler_name == 'reduce_on_plateau':
+        factor = float(getattr(args, 'plateau_factor', 0.5))
+        patience = int(getattr(args, 'plateau_patience', 10))
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=factor,
+            patience=patience,
+        )
+        return scheduler, scheduler_name
+
+    total_epochs = max(1, int(getattr(args, 'epochs', 1)))
+    warmup_epochs = int(getattr(args, 'warmup_epochs', 10))
+    warmup_epochs = max(0, min(warmup_epochs, total_epochs - 1))
+
+    min_lr_ratio = float(getattr(args, 'min_lr_ratio', 0.01))
+    min_lr_ratio = max(0.0, min(1.0, min_lr_ratio))
+    warmup_start_factor = float(getattr(args, 'warmup_start_factor', 0.1))
+    scheduler = WarmupCosineLRScheduler(
+        optimizer=optimizer,
+        total_epochs=total_epochs,
+        warmup_epochs=warmup_epochs,
+        min_lr_ratio=min_lr_ratio,
+        warmup_start_factor=warmup_start_factor,
+    )
+
+    return scheduler, 'warmup_cosine'
+
+
 def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args):
     model.train()
     accs, aucs, macros = [], [], []
@@ -17,8 +89,7 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
     val_epochs = []
     epoch_num = args.epochs
 
-    # Add scheduler
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+    scheduler, scheduler_name = build_lr_scheduler(optimizer, args)
 
     for i in range(epoch_num):
         loss_all = 0
@@ -42,8 +113,8 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
         epoch_loss = loss_all / len(train_loader.dataset)
         epoch_losses.append(epoch_loss)
 
-        # train_micro, train_auc, train_macro = evaluate(model, device, train_loader)
-        logging.info(f'(Train) | Epoch={i:03d}, loss={epoch_loss:.4f}') #, '
+        current_lr = optimizer.param_groups[0]['lr']
+        logging.info(f'(Train) | Epoch={i:03d}, lr={current_lr:.6e}, loss={epoch_loss:.4f}') #, '
                      # f'train_micro={(train_micro * 100):.2f}, train_macro={(train_macro * 100):.2f}, '
                      # f'train_auc={(train_auc * 100):.2f}')
 
@@ -60,42 +131,25 @@ def train_and_evaluate(model, train_loader, test_loader, optimizer, device, args
                    f'test_loss={test_loss:.4f}\n'
             logging.info(text)
 
+        if scheduler is not None:
+            if scheduler_name == 'reduce_on_plateau':
+                monitor_loss = val_losses[-1] if len(val_losses) > 0 else epoch_loss
+                scheduler.step(monitor_loss)
+            else:
+                scheduler.step()
+
         if args.enable_nni:
             # Evaluate on training set to get train_auc for NNI reporting
             train_micro, train_auc, train_macro, train_loss = evaluate(model, device, train_loader)
             nni.report_intermediate_result(train_auc)
 
-    try:
-        import matplotlib.pyplot as plt
-        plt.figure()
-        plt.plot(range(1, len(epoch_losses) + 1), epoch_losses, label='Training Loss')
-        if len(val_losses) > 0:
-            plt.plot(val_epochs, val_losses, label='Validation Loss', marker='o')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('Training and Validation Loss Curve')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig('loss_curve.png')
-        plt.close()
-        logging.info('Loss curve saved to loss_curve.png')
-    except ImportError:
-        logging.warning('Matplotlib not installed. Skipping loss plot.')
-
-    try:
-        data_to_save = np.column_stack((range(1, len(epoch_losses) + 1), epoch_losses))
-        header = 'epoch,train_loss'
-        if len(val_losses) > 0:
-             # Extend val_losses to match epoch length directly or just save separate file?
-             # Saving separate file is cleaner.
-             np.savetxt('val_loss_history.csv', np.column_stack((val_epochs, val_losses)), delimiter=',', header='epoch,val_loss', comments='')
-        np.savetxt('train_loss_history.csv', data_to_save, delimiter=',', header=header, comments='')
-        logging.info('Loss histories saved to .csv files')
-    except Exception as e:
-        logging.warning(f'Failed to save loss history: {e}')
-
     accs, aucs, macros = np.sort(np.array(accs)), np.sort(np.array(aucs)), np.sort(np.array(macros))
-    return accs.mean(), aucs.mean(), macros.mean(), (np.mean(val_losses) if val_losses else 0.0)
+    loss_history = {
+        'train_losses': epoch_losses,
+        'val_losses': val_losses,
+        'val_epochs': val_epochs,
+    }
+    return accs.mean(), aucs.mean(), macros.mean(), (np.mean(val_losses) if val_losses else 0.0), loss_history
 
 
 @torch.no_grad()

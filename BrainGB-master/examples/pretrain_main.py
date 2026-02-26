@@ -50,7 +50,8 @@ def main(args):
     dataset = BrainDataset(root=root_dir,
                            name=args.dataset_name,
                            pre_transform=get_transform(args.node_features),
-                           edge_sparsity=args.sparsity)
+                           edge_sparsity=args.sparsity,
+                           use_text=args.use_clip)
 
     num_features = dataset[0].x.shape[1]
     nodes_num = dataset.num_nodes
@@ -112,5 +113,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--train_batch_size', type=int, default=16)
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--use_clip', action='store_true',
+                        help='Enable text loading and CLIP pretraining/finetuning.')
 
     main(parser.parse_args())

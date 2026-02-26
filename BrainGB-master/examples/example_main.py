@@ -26,6 +26,52 @@ def seed_everything(seed):
         np.random.seed(seed)  # set random seed for numpy
         torch.manual_seed(seed)  # set random seed for CPU
         torch.cuda.manual_seed_all(seed)  # set random seed for all GPUs
+        if torch.cuda.is_available():
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
+
+def plot_fold_loss_curves(fold_loss_histories, output_path='loss_curve_5fold.png'):
+    if len(fold_loss_histories) == 0:
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        logging.warning('Matplotlib not installed. Skipping multi-fold loss plot.')
+        return
+
+    n_folds = len(fold_loss_histories)
+    n_cols = 3
+    n_rows = int(np.ceil(n_folds / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows), squeeze=False)
+    flat_axes = axes.flatten()
+
+    for idx, history in enumerate(fold_loss_histories):
+        ax = flat_axes[idx]
+        train_losses = history.get('train_losses', [])
+        val_losses = history.get('val_losses', [])
+        val_epochs = history.get('val_epochs', [])
+
+        if len(train_losses) > 0:
+            ax.plot(range(1, len(train_losses) + 1), train_losses, label='Training Loss')
+        if len(val_losses) > 0:
+            ax.plot(val_epochs, val_losses, label='Validation Loss', marker='o')
+
+        ax.set_title(f'Fold {idx + 1}')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.grid(True)
+        ax.legend()
+
+    for idx in range(n_folds, len(flat_axes)):
+        fig.delaxes(flat_axes[idx])
+
+    fig.suptitle('Training and Validation Loss Curves by Fold')
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    fig.savefig(output_path)
+    plt.close(fig)
+    logging.info(f'Multi-fold loss curves saved to {output_path}')
 
 
 def main(args):
@@ -60,7 +106,8 @@ def main(args):
     dataset = BrainDataset(root=root_dir,
                            name=args.dataset_name,
                            pre_transform=get_transform(args.node_features),
-                           edge_sparsity=args.sparsity)
+                           edge_sparsity=args.sparsity,
+                           use_text=args.use_clip)
     y = get_y(dataset)
     num_features = dataset[0].x.shape[1]
     nodes_num = dataset.num_nodes
@@ -71,14 +118,17 @@ def main(args):
     #     bin_edges = None
 
     accs, aucs, macros, exp_accs, exp_aucs, exp_macros = [], [], [], [], [], []
-    for _ in range(args.repeat):
-        seed_everything(42)  # use random seed for each run  random.randint(1, 1000000)
-        skf = StratifiedKFold(n_splits=args.k_fold_splits, shuffle=True)
+    fold_loss_histories = []
+    for repeat_idx in range(args.repeat):
+        run_seed = args.seed + repeat_idx
+        seed_everything(run_seed)
+        logging.info(f'Using run_seed={run_seed} (base seed={args.seed}, repeat_idx={repeat_idx})')
+        skf = StratifiedKFold(n_splits=args.k_fold_splits, shuffle=True, random_state=run_seed)
         for train_index, test_index in skf.split(dataset, y):
             train_index = np.asarray(train_index, dtype=np.int64)
             test_index = np.asarray(test_index, dtype=np.int64)
             model = build_model(args, device, model_name, num_features, nodes_num,
-                               load_pretrained=True)
+                               load_pretrained=not args.disable_pretrained)
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
             train_set, test_set = dataset[train_index], dataset[test_index]
 
@@ -86,8 +136,15 @@ def main(args):
             test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=False, **loader_args)
 
             # train
-            test_micro, test_auc, test_macro, _ = train_and_evaluate(model, train_loader, test_loader,
-                                                                  optimizer, device, args)
+            test_micro, test_auc, test_macro, _, loss_history = train_and_evaluate(
+                model,
+                train_loader,
+                test_loader,
+                optimizer,
+                device,
+                args,
+            )
+            fold_loss_histories.append(loss_history)
 
             test_micro, test_auc, test_macro, _ = evaluate(model, device, test_loader)
             logging.info(f'(Initial Performance Last Epoch) | test_micro={(test_micro * 100):.2f}, '
@@ -101,6 +158,7 @@ def main(args):
                  f'avg_auc={(np.mean(aucs) * 100):.2f} +- {np.std(aucs) * 100:.2f}, ' \
                  f'avg_macro={(np.mean(macros) * 100):.2f} +- {np.std(macros) * 100:.2f}\n'
     logging.info(result_str)
+    plot_fold_loss_curves(fold_loss_histories)
 
     with open('result.log', 'a') as f:
         # write all input arguments to f
@@ -148,6 +206,15 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-4)
     parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--lr_scheduler', type=str,
+                        choices=['warmup_cosine', 'reduce_on_plateau', 'none'],
+                        default='warmup_cosine')
+    parser.add_argument('--warmup_epochs', type=int, default=10)
+    parser.add_argument('--warmup_start_factor', type=float, default=0.1)
+    parser.add_argument('--min_lr_ratio', type=float, default=0.01,
+                        help='Final LR ratio relative to initial LR for cosine decay.')
+    parser.add_argument('--plateau_factor', type=float, default=0.5)
+    parser.add_argument('--plateau_patience', type=int, default=10)
 
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--k_fold_splits', type=int, default=5)
@@ -159,5 +226,9 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=112078)
     parser.add_argument('--diff', type=float, default=0.2)
     parser.add_argument('--mixup', type=int, default=1) #[0, 1]
+    parser.add_argument('--use_clip', action='store_true',
+                        help='Enable text loading and CLIP pretraining/finetuning.')
+    parser.add_argument('--disable_pretrained', action='store_true',
+                        help='Disable loading pretrained GCN weights for downstream training.')
 
     main(parser.parse_args())

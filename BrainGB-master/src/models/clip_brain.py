@@ -1,12 +1,20 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModel
+from transformers import AutoConfig, AutoModel
 
 
 class TextEncoder(nn.Module):
     def __init__(self, pretrained_model='prajjwal1/bert-tiny', proj_dim=256):
         super(TextEncoder, self).__init__()
-        self.bert = AutoModel.from_pretrained(pretrained_model, use_safetensors=True)
+        try:
+            self.bert = AutoModel.from_pretrained(
+                pretrained_model,
+                use_safetensors=True,
+                local_files_only=True,
+            )
+        except Exception:
+            config = AutoConfig.from_pretrained(pretrained_model, local_files_only=True)
+            self.bert = AutoModel.from_config(config)
         hidden_size = self.bert.config.hidden_size  # 128 for bert-tiny
         self.projection = nn.Linear(hidden_size, proj_dim)
 

@@ -26,9 +26,11 @@ def dense_to_ind_val(adj):
 
 
 class BrainDataset(InMemoryDataset):
-    def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0, edge_sparsity: float = 0.0):
+    def __init__(self, root, name, transform=None, pre_transform: BaseTransform = None, view=0,
+                 edge_sparsity: float = 0.0, use_text: bool = False):
         self.view: int = view
         self.edge_sparsity: float = float(edge_sparsity or 0.0)
+        self.use_text: bool = bool(use_text)
         self.original_name = str(name)
         self.name_clean = self.original_name[:-4] if self.original_name.lower().endswith('.npy') else self.original_name
         self.name = self.name_clean.upper()
@@ -56,6 +58,8 @@ class BrainDataset(InMemoryDataset):
     @property
     def processed_file_names(self):
         name = f'{self.name_clean}_{self.view}'
+        if self.use_text:
+            name += '_with_text'
         if self.filename_postfix is not None:
             name += f'_{self.filename_postfix}'
         if self.edge_sparsity > 0:
@@ -127,15 +131,24 @@ class BrainDataset(InMemoryDataset):
             y = torch.Tensor(m['label']).long().flatten()
             y[y == -1] = 0
 
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained('prajjwal1/bert-tiny')
+        tokenizer = None
+        prompt_lines = None
+        if self.use_text:
+            from transformers import AutoTokenizer
 
-        prompt_path = osp.join(self.raw_dir, 'Subject_prompt_SZ.txt')
-        with open(prompt_path, 'r', encoding='utf-8') as f:
-            prompt_lines = [line.strip() for line in f.readlines()]
-        assert len(prompt_lines) >= num_graphs, (
-            f'Subject_prompt_SZ.txt has {len(prompt_lines)} lines but dataset has {num_graphs} graphs'
-        )
+            try:
+                tokenizer = AutoTokenizer.from_pretrained('prajjwal1/bert-tiny')
+            except Exception:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    'prajjwal1/bert-tiny',
+                    local_files_only=True,
+                )
+            prompt_path = osp.join(self.raw_dir, 'Subject_prompt_SZ.txt')
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_lines = [line.strip() for line in f.readlines()]
+            assert len(prompt_lines) >= num_graphs, (
+                f'Subject_prompt_SZ.txt has {len(prompt_lines)} lines but dataset has {num_graphs} graphs'
+            )
 
         data_list = []
         for i in range(num_graphs):
@@ -170,22 +183,30 @@ class BrainDataset(InMemoryDataset):
                  # Standard dense to sparse conversion for full graph
                  edge_index, edge_attr = dense_to_ind_val(matrix)
 
-            tokenized = tokenizer(
-                prompt_lines[i],
-                padding='max_length',
-                truncation=True,
-                max_length=32,
-                return_tensors='pt',
-            )
-            data = BrainData(
-                num_nodes=num_nodes,
-                y=y[i],
-                edge_index=edge_index,
-                edge_attr=edge_attr,
-                input_ids=tokenized['input_ids'],       # shape [1, 32] → PyG cat → [B, 32]
-                attention_mask=tokenized['attention_mask'],  # shape [1, 32]
-            )
-            # 检查一下到底有多少条边！
+            if self.use_text:
+                tokenized = tokenizer(
+                    prompt_lines[i],
+                    padding='max_length',
+                    truncation=True,
+                    max_length=32,
+                    return_tensors='pt',
+                )
+                data = BrainData(
+                    num_nodes=num_nodes,
+                    y=y[i],
+                    edge_index=edge_index,
+                    edge_attr=edge_attr,
+                    input_ids=tokenized['input_ids'],
+                    attention_mask=tokenized['attention_mask'],
+                )
+            else:
+                data = BrainData(
+                    num_nodes=num_nodes,
+                    y=y[i],
+                    edge_index=edge_index,
+                    edge_attr=edge_attr,
+                )
+
             if i == 0:
                 print(f"🛑 DEBUG CHECK: Graph 0 edges: {edge_index.shape[1]}")
             data_list.append(data)
